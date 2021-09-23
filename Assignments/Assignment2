@@ -322,10 +322,70 @@ GROUP BY
 	ROLLUP(gd.genrename, ms.membershiptype)
 ORDER BY gd.genrename;
 
+-- Question14
+select * from rental
+
+UPDATE
+	rental
+SET
+	rentalrequestdate = '2020-06-20',
+	rentalshippeddate = '2020-06-20',
+	rentalreturneddate = '2020-06-21'
+WHERE rentalid IN (7);
 
 
+CREATE EXTENSION tablefunc;
 
+SELECT
+	*
+FROM crosstab(
+		'WITH genredvd AS
+		(
+			SELECT
+				g.genrename,
+				d.dvdid
+			FROM dvd d
+			JOIN genre g ON d.genreid = g.genreid
+		)
+		SELECT
+			EXTRACT(YEAR FROM r.rentalrequestdate) AS year,
+			gd.genrename,
+			COUNT(r.dvdid) AS totalrenteddvd
+		FROM rental r
+		JOIN genredvd gd ON r.dvdid = gd.dvdid
+		GROUP BY year, gd.genrename
+		ORDER BY year, gd.genrename'
+) AS finalresult	(
+						year double precision, 
+						Western BIGINT, 
+						Drama BIGINT, 
+						Horror BIGINT, 
+						Comedy BIGINT, 
+						Action BIGINT
+					);
 
+-- Question15
+
+WITH genredvd AS
+(
+	SELECT
+		g.genrename,
+		d.dvdid
+	FROM dvd d
+	JOIN genre g ON d.genreid = g.genreid
+)
+SELECT
+	gd.genrename, 
+	TO_CHAR(r.rentalrequestdate, 'Month') AS month,
+	EXTRACT(YEAR FROM r.rentalrequestdate) AS year,
+	COUNT(r.dvdid) AS totalrenteddvd
+FROM rental r
+JOIN genredvd gd ON r.dvdid = gd.dvdid
+WHERE DATE_PART('year', CURRENT_DATE) - DATE_PART('year', rentalrequestdate) < 3
+GROUP BY gd.genrename, month, year
+ORDER BY year, month, gd.genrename
+
+commit
 
 
 
