@@ -1,0 +1,207 @@
+-- Question 1
+select * from rental
+
+-- Creating Rental Audit Table
+CREATE TABLE rentalaudit (
+	auditid SERIAL PRIMARY KEY,
+	typeofchange VARCHAR(10),
+	beforechange TEXT,
+	afterchange TEXT,
+	dateofchange TIMESTAMP
+);
+-- alter table rentalaudit
+-- alter column dateofchange TYPE TIMESTAMP
+
+-- Question 2
+-- First we create a function to be called by the trigger
+CREATE OR REPLACE FUNCTION restrict_delete_rental_audit()
+	RETURNS TRIGGER
+	LANGUAGE PLPGSQL
+AS
+$$
+BEGIN
+	RAISE EXCEPTION 'Delete operation is not allowed on Rental Audit Table';
+	RETURN NEW;
+END;
+$$
+
+-- Creating trigger to call the above function
+CREATE TRIGGER restrict_delete_on_rental_audit
+	BEFORE DELETE
+	ON rentalaudit
+	FOR EACH STATEMENT
+	EXECUTE PROCEDURE restrict_delete_rental_audit();
+	
+DELETE FROM rentalaudit;
+
+-- Question 3
+
+
+-- Using String_agg or array_agg to return result as string
+SELECT 
+	array_agg(CAST(rentalid AS text) || ',' ||CAST(dvdid AS text))
+FROM rental WHERE rentalid = 6;
+
+-- converting all columns to string
+select rental::text from rental WHERE rentalid = 6;
+
+-- converting all columns for the table to key:value pair
+select json_agg(rental) from rental;
+
+-- First we create a function to be called by the trigger
+CREATE OR REPLACE FUNCTION log_rental_audit()
+	RETURNS TRIGGER
+	LANGUAGE PLPGSQL
+AS
+$$
+DECLARE
+	beforevalue TEXT = NULL;
+	aftervalue TEXT = NULL;
+BEGIN
+	SELECT 
+	OLD::TEXT 
+	FROM rental 
+	INTO beforevalue;
+	
+	SELECT 
+	NEW::TEXT 
+	FROM rental 
+	INTO aftervalue ;
+	
+	IF (TG_OP = 'INSERT') THEN
+		INSERT 
+		INTO rentalaudit(auditid, typeofchange, beforechange,afterchange, dateofchange)
+		VALUES(DEFAULT, 'INSERT', NULL, aftervalue, CURRENT_TIMESTAMP);
+	ELSIF (TG_OP = 'DELETE') THEN
+		INSERT 
+		INTO rentalaudit(auditid, typeofchange, beforechange,afterchange, dateofchange)
+		VALUES(DEFAULT, 'DELETE', beforevalue, NULL, CURRENT_TIMESTAMP);
+	ELSE
+		INSERT 
+		INTO rentalaudit(auditid, typeofchange, beforechange,afterchange, dateofchange)
+		VALUES(DEFAULT, 'UPDATE', beforevalue, aftervalue, CURRENT_TIMESTAMP);
+	END IF;
+	
+	RETURN NEW;
+END;
+$$
+
+-- Creating trigger to call the above function
+CREATE TRIGGER rentalaudit
+	AFTER INSERT OR UPDATE OR DELETE
+	ON rental
+	FOR EACH ROW
+	EXECUTE PROCEDURE log_rental_audit();
+
+
+-- Testing out the Triggers
+select * from rental;
+select * from rentalaudit;
+
+INSERT 
+INTO rental (RentalId,MemberId,DVDId,RentalRequestDate)
+VALUES(nextval('rentalSequence'),5,1,'2021/02/28');
+	
+delete from rental where rentalid = 25;
+
+update rental
+set rentalreturneddate = '2021-02-27' where rentalid = 25;
+
+delete from rentalaudit;
+
+-- Question 4
+
+-- delete from rentalqueue where memberid = 13
+-- UPDATE rentalqueue SET queuepos = queuepos + 1 WHERE memberid = 13 AND queuepos >= 2;
+
+-- Altering the table to add 2 new columns
+ALTER TABLE 
+	rentalqueue
+ADD COLUMN title VARCHAR(32),
+ADD COLUMN queuepos INTEGER;
+
+UPDATE 
+	rentalqueue
+SET 
+	title = (SELECT dvdtitle FROM dvd WHERE dvdid = 5),
+	queuepos = 1;
+
+-- Creating a stored procedure called rentalQueueInsertHandler
+CREATE OR REPLACE PROCEDURE rentalQueueInsertHandler
+(
+	in_mem_id NUMERIC(12,0),
+	in_dvd_id NUMERIC(12,0),
+	in_queue_pos INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	var_dvd_title VARCHAR(32);
+	id_found VARCHAR(10);
+BEGIN
+	SELECT dvdtitle 
+	INTO var_dvd_title 
+	FROM dvd 
+	WHERE dvdid = in_dvd_id;
+	
+	SELECT 'FOUND' 
+	INTO id_found 
+	FROM rentalqueue 
+	WHERE dvdid = in_dvd_id 
+	AND memberid = in_mem_id;
+	
+	IF id_found = 'FOUND' THEN
+		RAISE EXCEPTION 'DVD already EXISTS in the queue.';
+	ELSE
+		UPDATE rentalqueue 
+		SET queuepos = queuepos + 1 
+		WHERE queuepos >= in_queue_pos 
+		AND memberid = in_mem_id;
+		
+		INSERT 
+		INTO rentalqueue(memberid, dvdid, dateaddedinqueue, title, queuepos)
+		VALUES (in_mem_id, in_dvd_id, CURRENT_DATE, var_dvd_title, in_queue_pos);
+	END IF;
+END; $$
+
+-- Executing the stored Procedure and checking the results
+CALL public.rentalQueueInsertHandler(13,2,6);
+SELECT * FROM rentalqueue;
+
+-- Question 5
+
+-- Creating a stored procedure called rentalQueueDeleteHandler
+CREATE OR REPLACE PROCEDURE rentalQueueDeleteHandler
+(
+	in_mem_id NUMERIC,
+	in_dvd_id NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	var_queue_pos INTEGER = NULL;
+BEGIN
+	SELECT queuepos 
+	INTO var_queue_pos 
+	FROM rentalqueue 
+	WHERE memberid = in_mem_id 
+	AND dvdid = in_dvd_id;
+	
+	IF var_queue_pos IS NULL THEN
+		RAISE EXCEPTION 'No such entry found';
+	ELSE
+		DELETE 
+		FROM rentalqueue 
+		WHERE memberid = in_mem_id 
+		AND dvdid = in_dvd_id;
+		
+		UPDATE rentalqueue 
+		SET queuepos = queuepos - 1 
+		WHERE memberid = in_mem_id 
+		AND queuepos > var_queue_pos;
+	END IF;
+END; $$
+
+-- Executing the Stored Procedure and checking the results
+CALL public.rentalqueuedeletehandler(13,3);
+SELECT * FROM rentalqueue;

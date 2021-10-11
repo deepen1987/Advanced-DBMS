@@ -118,13 +118,11 @@ JOIN genre g ON d.genreid = g.genreid
 JOIN 
 	(
 		SELECT 
-			mpr.dvdid,
+			d.dvdid,
 			CONCAT (mp.personfirstname, ' ', mp.personlastname) AS directorfullname
 		FROM movieperson mp
-		JOIN moviepersonrole mpr ON mp.personid = mpr.personid
-		JOIN dvd d ON mpr.dvdid = d.dvdid
-		JOIN role ON mpr.roleid = role.roleid
-		WHERE role.rolename = 'Director'
+		JOIN moviepersonrole mpr ON mp.personid = mpr.personid and mpr.roleid = 3
+		RIGHT JOIN dvd d ON mpr.dvdid = d.dvdid
 	) AS roles ON d.dvdid = roles.dvdid
 WHERE r.rentalshippeddate IS NOT NULL AND r.rentalreturneddate IS NULL;
 
@@ -133,13 +131,11 @@ WHERE r.rentalshippeddate IS NOT NULL AND r.rentalreturneddate IS NULL;
 WITH roles AS
 	(
 		SELECT 
-			mpr.dvdid,
+			d.dvdid,
 			CONCAT (mp.personfirstname, ' ', mp.personlastname) AS directorfullname
 		FROM movieperson mp
-		JOIN moviepersonrole mpr ON mp.personid = mpr.personid
-		JOIN dvd d ON mpr.dvdid = d.dvdid
-		JOIN role ON mpr.roleid = role.roleid
-		WHERE role.rolename = 'Director'
+		JOIN moviepersonrole mpr ON mp.personid = mpr.personid and mpr.roleid = 3
+		RIGHT JOIN dvd d ON mpr.dvdid = d.dvdid 
 	)
 SELECT
 	CONCAT(m.memberfirstname, ' ', m.memberlastname) AS memberfullname,
@@ -162,7 +158,8 @@ WITH ranklist AS
 	SELECT 
 		*,
 	RANK() OVER (
-		ORDER BY r1.rentalid
+		PARTITION BY r1.memberid
+		ORDER BY r1.rentalid desc
 	) AS ranks
 	FROM rental r1
 )
@@ -174,16 +171,10 @@ SELECT
 	r.ratingname,
 	rl.rentalrequestdate
 FROM ranklist rl
-JOIN member m ON rl.memberid = m.memberid
+JOIN member m ON rl.memberid = m.memberid and rl.ranks = 1
 JOIN dvd d ON rl.dvdid = d.dvdid
 JOIN genre g ON d.genreid = g.genreid
-JOIN rating r ON d.ratingid = r.ratingid
-WHERE rl.ranks IN	(
-						SELECT
-							MAX(ranklist.ranks)
-						FROM ranklist
-						GROUP BY ranklist.memberid
-					);
+JOIN rating r ON d.ratingid = r.ratingid;
 					
 -- Question9
 SELECT 
@@ -221,20 +212,23 @@ where rentalshippeddate IS NOT NULL
 select * from rental
 
 UPDATE rental
-SET rentalreturneddate = '2020/02/20'
+SET rentalreturneddate = NULL
 WHERE rentalid = 4;
 UPDATE rental
-SET rentalreturneddate = '2020/02/19'
+SET rentalreturneddate = NULL
 WHERE rentalid = 5;
 UPDATE rental
-SET rentalreturneddate = '2020/02/23'
+SET rentalreturneddate = NULL
 WHERE rentalid = 7;
 UPDATE rental
-SET rentalreturneddate = '2020/02/21'
+SET rentalreturneddate = NULL
 WHERE rentalid = 8;
 UPDATE rental
-SET rentalreturneddate = '2020/02/20'
+SET rentalreturneddate = NULL
 WHERE rentalid = 9;
+UPDATE rental
+SET rentalreturneddate = NULL
+WHERE rentalid = 11;
 
 -- Question11
 
