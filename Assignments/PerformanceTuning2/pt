@@ -1,0 +1,193 @@
+SELECT DVD.DVDTitle AS "DVD Title",  
+		SUBSTR(MoviePerson.PersonFirstName,1,10) || ' ' ||
+		SUBSTR(MoviePerson.PersonLastName,1,10) AS "Director Name"
+FROM DVD
+JOIN MoviePersonRole ON DVD.DVDId = MoviePersonRole.DVDId 
+--Need to add index on FK MoviePersonRole.DVDId
+JOIN Role ON Role.RoleId = MoviePersonRole.RoleId
+--Need to add index on FK MoviePersonRole.RoleId
+JOIN MoviePerson ON MoviePersonRole.PersonId = MoviePerson.PersonId 
+--Need to add index on FK MoviePersonRole.PersonId
+WHERE 
+Role.RoleName = 'Director'
+		AND ((MoviePerson.PersonLastName = 'Spielberg') 
+			 --Need to add index on MoviePerson.PersonLastName
+		     OR 
+(MoviePerson.PersonLastName = 'Hitchcock' AND MoviePerson.PersonFirstName = 'Alfred')) 
+--Need to add index on MoviePerson.PersonLastName MoviePerson.PersonFirstName
+ORDER BY MoviePerson.PersonLastName, MoviePerson.PersonFirstName;
+
+CREATE INDEX idx_last_first_name
+ON MoviePerson (PersonLastName, PersonFirstName);
+CREATE INDEX idx_dvdid
+ON MoviePersonRole (DVDId);
+CREATE INDEX idx_RoleId
+ON MoviePersonRole (RoleId);
+CREATE INDEX idx_PersonId
+ON MoviePersonRole (PersonId);
+CREATE INDEX idx_lastname
+ON MoviePerson (PersonLastName);
+CREATE INDEX idx_firstname
+ON MoviePerson (PersonFirstName);
+
+
+DROP INDEX idx_PersonId;
+DROP INDEX idx_RoleId;
+DROP INDEX idx_dvdid;
+DROP INDEX idx_last_first_name;
+DROP INDEX idx_lastname;
+DROP INDEX idx_firstname;
+
+
+-- Question 2
+SELECT DVDTitle 
+		FROM DVD 
+		WHERE DVDId NOT IN 
+			(SELECT DISTINCT DVDId FROM Rental WHERE MemberId = 123);
+			
+SELECT DVDTitle 
+		FROM DVD 
+		WHERE DVDId NOT IN 
+			(SELECT DVDId FROM Rental WHERE MemberId = 123);
+			
+
+-- Question 3
+CREATE VIEW DVDView AS 
+		SELECT DVDId, DVDTitle, Genre.GenreName AS Genre, 
+			Rating.RatingName AS Rating
+		FROM DVD
+JOIN Genre ON DVD.GenreId = Genre.GenreId
+JOIN Rating ON DVD.RatingId = Rating.RatingId;
+
+SELECT * FROM DVDView WHERE Genre = 'Horror' AND Rating = 'R';
+
+CREATE INDEX idx_GenreId
+ON DVD (GenreId);
+CREATE INDEX idx_RatingId
+ON DVD (RatingId);
+
+DROP INDEX idx_GenreId;
+DROP INDEX idx_RatingId;
+
+-- Question 4
+SELECT
+	CONCAT(m.memberfirstname, ' ', m.memberlastname) AS memberfullname,
+	d.dvdtitle,
+	g.genrename,
+	rating.ratingname,
+	roles.directorfullname
+FROM member m
+JOIN rental r ON m.memberid = r.memberid
+JOIN dvd d ON r.dvdid = d.dvdid
+JOIN rating rating ON d.ratingid = rating.ratingid
+JOIN genre g ON d.genreid = g.genreid
+JOIN 
+	(
+		SELECT 
+			mpr.dvdid,
+			CONCAT (mp.personfirstname, ' ', mp.personlastname) AS directorfullname
+		FROM movieperson mp
+		JOIN moviepersonrole mpr ON mp.personid = mpr.personid and mpr.roleid = 3
+-- 		RIGHT JOIN dvd d ON mpr.dvdid = d.dvdid
+	) AS roles ON d.dvdid = roles.dvdid
+WHERE r.rentalshippeddate != '8888-08-08' AND r.rentalreturneddate = '8888-08-08';
+
+select * from moviepersonrole WHERE roleid = 3
+select * from movieperson
+
+select * from rental;
+
+UPDATE rental
+SET rentalreturneddate = '8888-08-08'
+WHERE rentalreturneddate IS NULL
+
+Create index idx_rmemberid on rental (memberid);
+Create index idx_rdvdid on rental (dvdid);
+Create index idx_dratingid on dvd (ratingid);
+Create index idx_dgenreid on dvd (genreid);
+Create index idx_mprpersonid on moviepersonrole (personid);
+Create index idx_mprroleid on moviepersonrole (roleid);
+Create index idx_mprdvdid on moviepersonrole (dvdid);
+Create index idx_rentalshippeddate on rental (rentalshippeddate);
+Create index idx_rentalreturneddate on rental (rentalreturneddate);
+
+DROP INDEX idx_rmemberid;
+DROP INDEX idx_rdvdid;
+DROP INDEX idx_dratingid;
+DROP INDEX idx_dgenreid;
+DROP INDEX idx_mprpersonid;
+DROP INDEX idx_mprroleid;
+DROP INDEX idx_mprdvdid;
+DROP INDEX idx_rentalshippeddate;
+DROP INDEX idx_rentalreturneddate;
+
+-- Question 5
+
+SELECT 
+	d.dvdtitle,
+	g.genrename,
+	rating.ratingname,
+COUNT(r.dvdid) AS totalnumberofrentals
+FROM rental r
+JOIN dvd d ON r.dvdid = d.dvdid
+JOIN genre g ON d.genreid = g.genreid
+JOIN rating ON d.ratingid = rating.ratingid
+GROUP BY d.dvdtitle, g.genrename, rating.ratingname
+
+Create index idx_rdvdid on rental (dvdid);
+Create index idx_dgenreid on dvd (genreid);
+Create index idx_dratingid on dvd (ratingid);
+Create index idx_dvdtitle on dvd (dvdtitle);
+Create index idx_genrename on genre (genrename);
+Create index idx_ratingname on rating (ratingname);
+
+DROP INDEX idx_rdvdid;
+DROP INDEX idx_dgenreid;
+DROP INDEX idx_dratingid;
+DROP INDEX idx_dvdtitle;
+DROP INDEX idx_genrename;
+DROP INDEX idx_ratingname;
+
+-- Question 6
+SELECT * FROM Payment WHERE MemberId = 1
+
+SELECT AmountPaidUntilDate FROM Payment 
+WHERE PaymentId = (SELECT MAX(PaymentId) FROM Payment WHERE MemberId=1);
+
+SELECT AmountPaidUntilDate 
+INTO V_UntilDate  
+FROM Payment 
+WHERE MemberId=P_MemberId
+ORDER BY paymentid DESC
+LIMIT 1
+
+
+UPDATE DVD 
+SET 
+	DVDQuantityOnRent = DVDQuantityOnRent - 1,
+	DVDLostQuantity = DVDLostQuantity + 1
+WHERE DVDId = V_DVDId;
+
+UPDATE DVD SET DVDLostQuantity = DVDLostQuantity + 1
+WHERE DVDId = V_DVDId;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,238 @@
+--Question 1 Function which return the DVD title for a member based on the rental queue and DVD availability.
+CREATE OR REPLACE FUNCTION first_available_dvd_rentalqueue
+(
+	member_id INTEGER
+)
+	RETURNS VARCHAR(32)
+	LANGUAGE plpgsql
+	AS
+$$
+DECLARE
+	title VARCHAR(32) = NULL;
+BEGIN
+	SELECT dvdtitle
+	INTO title
+	FROM rentalqueue r
+	JOIN dvd d using(dvdid)
+	WHERE r.memberid = member_id AND dvdquantityonhand > 0
+	ORDER BY queuepos
+	LIMIT 1;
+	
+	RETURN title;
+END;
+$$
+
+SELECT * FROM first_available_dvd_rentalqueue(12);
+
+SELECT * FROM rentalqueue;
+
+CALL public.rentalQueueInsertHandler(13,2,6);
+UPDATE rentalqueue
+SET queuepos = 2
+WHERE memberid = 13 and dvdid = 7
+-----------------------
+SELECT * FROM dvd;
+
+UPDATE dvd
+SET dvdquantityonhand = 5
+WHERE dvdid = 5;
+
+-----------------------
+SELECT * FROM rental;
+
+UPDATE rental 
+SET rentalreturneddate = NULL
+WHERE rentalid = 6;
+
+-----------------------
+--Question 2
+
+SELECT memberid, memberfirstname, memberlastname, membershipid FROM member;
+
+UPDATE member
+SET membershipid = 2
+WHERE memberid = 13;
+
+SELECT * FROM membership;
+
+SELECT * FROM rental where memberid = 12;
+
+UPDATE rental
+SET rentalreturneddate = '2021/11/02'
+WHERE rentalid = 10;
+
+INSERT INTO 
+	rental (RentalId,MemberId,DVDId,RentalRequestDate)
+VALUES
+	(nextval('rentalSequence'),12,7,'2021/11/02');
+
+--Actual function
+CREATE OR REPLACE FUNCTION dvd_available_to_rent
+(
+	member_id INTEGER
+)
+	RETURNS INTEGER
+	LANGUAGE plpgsql
+	AS
+$$
+DECLARE
+	membership_id INTEGER = 0;
+	dvdatonce INTEGER = 0;
+	dvdinmonth INTEGER = 0;
+	rentedinmonth INTEGER = 0;
+	rentednow INTEGER = 0;
+BEGIN
+	SELECT membershipid
+	INTO membership_id
+	FROM member
+	WHERE memberid = member_id;
+
+	SELECT membershiplimitpermonth
+	INTO dvdinmonth
+	FROM membership
+	WHERE membershipid = membership_id;
+	
+	SELECT dvdattime
+	INTO dvdatonce
+	FROM membership
+	WHERE membershipid = membership_id; 
+	
+	SELECT COUNT(*)
+	INTO rentedinmonth
+	FROM rental
+	WHERE memberid = member_id AND rentalshippeddate > '2021-10-31' AND rentalshippeddate < '2021-12-01';
+	
+	SELECT COUNT(*)
+	INTO rentednow
+	FROM rental
+	WHERE memberid = member_id AND rentalreturneddate IS NULL;
+	
+	IF dvdinmonth - rentedinmonth = 0 THEN
+		RETURN 0;
+	ELSE
+		IF dvdatonce - rentednow = 0 THEN
+			RETURN 0;
+		ELSE
+			RETURN dvdatonce - rentednow;
+		END IF;
+	END IF;
+END;
+$$
+
+SELECT * FROM dvd_available_to_rent(12);
+
+--Question 3 Stored Procedure
+
+CALL public.rentalqueueinserthandler(12,2,1);
+
+SELECT * FROM rentalqueue where memberid = 12;
+SELECT * FROM rental where memberid = 12;
+
+UPDATE dvd set dvdlostquantity = 0 where dvdid = 2;
+-- rentalreturneddate we update when returning a DVD
+SELECT * FROM dvd WHERE dvdid IN (1,2,6);
+-- We can create a stored procedure which takes in the rentalid, rentalreturneddate and dvdlostquantity
+--if the dvd_lost = y then mark it as lost and add charge to payment table of $25 else return the movie and ship the next movie as per rentalqueue
+SELECT * FROM payment where memberid = 12; 
+
+delete from payment where paymentid = 18
+
+SELECT amountpaiddate + '1 day' from payment;
+
+CREATE SEQUENCE IF NOT EXISTS paymentSequence
+	AS integer
+	INCREMENT BY 1
+	START WITH 17
+	OWNED BY payment.paymentid;
+
+
+CALL public.dvd_return_flow(6,'2021-11-09','y');
+
+CREATE OR REPLACE PROCEDURE dvd_return_flow
+(
+	rental_id INTEGER,
+	rental_return_date DATE,
+	dvd_lost CHAR(1)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+	member_id INTEGER;
+	dvd_id INTEGER;
+	dvdavailabletorent INTEGER;
+	next_dvd VARCHAR(32);
+BEGIN
+	SELECT memberid	INTO member_id FROM rental WHERE rentalid = rental_id;
+	
+	SELECT dvdid INTO dvd_id FROM rental WHERE rentalid = rental_id;
+	
+	UPDATE rental SET rentalreturneddate = rental_return_date WHERE rentalid = rental_id;
+	
+	IF dvd_lost = 'y' THEN
+		INSERT INTO payment (paymentid, memberid, amountpaid, amountpaiddate, amountpaiduntildate)
+		VALUES (nextval('paymentSequence'), member_id, 25.00, rental_return_date, rental_return_date);
+		
+		UPDATE dvd SET dvdlostquantity = dvdlostquantity + 1 WHERE dvdid = dvd_id;
+	ELSE
+		UPDATE dvd SET dvdquantityonhand = dvdquantityonhand + 1 WHERE dvdid = dvd_id;
+	END IF;
+	
+	SELECT dvd_available_to_rent INTO dvdavailabletorent FROM dvd_available_to_rent(member_id);
+	
+	WHILE dvdavailabletorent > 0 LOOP
+		SELECT first_available_dvd_rentalqueue INTO next_dvd FROM first_available_dvd_rentalqueue(member_id);
+		
+		IF next_dvd IS NULL THEN
+			EXIT;
+		ELSE
+			SELECT dvdid INTO dvd_id FROM rentalqueue WHERE memberid = member_id AND title = next_dvd;
+			
+			CALL public.rentalqueuedeletehandler(member_id,dvd_id);
+			
+			INSERT INTO 
+				rental (RentalId,MemberId,DVDId,RentalRequestDate)
+			VALUES
+				(nextval('rentalSequence'),member_id,dvd_id,CURRENT_DATE);
+
+			UPDATE dvd SET dvdquantityonhand = dvdquantityonhand - 1 WHERE dvdid = dvd_id;	
+			dvdavailabletorent = dvdavailabletorent - 1;
+		END IF;
+	END LOOP;
+END; $$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
